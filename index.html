@@ -637,14 +637,17 @@ function detailRow(p) {
     <div class="comps" id="comps-${p.id}" style="margin:10px 0; border-top:1px solid var(--line); padding-top:10px"></div>
     <div style="margin-bottom:14px">Status: ${statusSel}${compareSel?` &nbsp;&nbsp; ${compareSel}`:''}</div>
     <div class="opinions">${ops}</div>
-    <details style="margin-top:14px"><summary style="cursor:pointer; color:var(--muted)">Edit details</summary>
-      <div style="margin-top:8px; display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; max-width:640px">
+    <div style="margin-top:16px; display:flex; gap:10px; align-items:center">
+      <button data-edittoggle="${p.id}">Edit details</button>
+      <button class="btn-danger" data-del="${p.id}">Remove property</button>
+    </div>
+    <div id="edit-${p.id}" style="display:none; margin-top:12px">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; max-width:640px">
         ${EDIT_FIELDS.map(([k, label, type]) => `<label style="font-size:13px">${label}<br><input data-edit="${k}" data-eid="${p.id}" type="${type}"${type==='number'?' step="any"':''} value="${esc(p[k] ?? '')}" style="width:100%"></label>`).join('')}
       </div>
       <button class="primary" data-save="${p.id}" style="margin-top:10px">Save changes</button>
       <span class="sub" style="margin-left:8px">Correcting postcode or floor area updates comps and £/m².</span>
-    </details>
-    <div style="margin-top:16px"><button class="btn-danger" data-del="${p.id}">Remove property</button></div>
+    </div>
   </td></tr>`;
 }
 
@@ -668,6 +671,11 @@ function wireDetail() {
     });
   $('#grid').querySelectorAll('[data-compare]').forEach(sel =>
     sel.onchange = () => { const v = sel.value; sel.value = ''; if (v) openCompare(sel.dataset.compare, v); });
+  $('#grid').querySelectorAll('[data-edittoggle]').forEach(b =>
+    b.onclick = () => {
+      const el = document.getElementById('edit-' + b.dataset.edittoggle);
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    });
   $('#grid').querySelectorAll('[data-save]').forEach(b =>
     b.onclick = async () => {
       const id = b.dataset.save;
