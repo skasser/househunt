@@ -521,6 +521,17 @@ const COLS = [
   { key:'seen',          label:'Seen',     get:p=>`<span class="${isStale(p)?'stale':'muted'}">${seenLabel(p)}</span>`, sortVal:p=>{const d=daysSince(lastSeen(p));return d==null?Infinity:d;} }
 ];
 
+// Fields the user can correct by hand when the pulled data is wrong/missing.
+const EDIT_FIELDS = [
+  ['address','Address','text'], ['postcode','Postcode','text'],
+  ['price','Price (£)','number'], ['floor_area_sqm','Floor area (m²)','number'],
+  ['beds','Beds','number'], ['baths','Baths','number'],
+  ['property_type','Type','text'], ['tenure','Tenure','text'],
+  ['lease_years','Lease years left','number'], ['council_tax','Council tax','text'],
+  ['service_charge','Service charge/yr (£)','number'], ['ground_rent','Ground rent/yr (£)','number'],
+  ['agent','Agent','text']
+];
+
 function ratingFor(p, person) {
   const o = (p.property_opinions||[]).find(x => x.person === person);
   const r = o && o.rating;
@@ -626,6 +637,13 @@ function detailRow(p) {
     <div class="comps" id="comps-${p.id}" style="margin:10px 0; border-top:1px solid var(--line); padding-top:10px"></div>
     <div style="margin-bottom:14px">Status: ${statusSel}${compareSel?` &nbsp;&nbsp; ${compareSel}`:''}</div>
     <div class="opinions">${ops}</div>
+    <details style="margin-top:14px"><summary style="cursor:pointer; color:var(--muted)">Edit details</summary>
+      <div style="margin-top:8px; display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; max-width:640px">
+        ${EDIT_FIELDS.map(([k, label, type]) => `<label style="font-size:13px">${label}<br><input data-edit="${k}" data-eid="${p.id}" type="${type}"${type==='number'?' step="any"':''} value="${esc(p[k] ?? '')}" style="width:100%"></label>`).join('')}
+      </div>
+      <button class="primary" data-save="${p.id}" style="margin-top:10px">Save changes</button>
+      <span class="sub" style="margin-left:8px">Correcting postcode or floor area updates comps and £/m².</span>
+    </details>
     <div style="margin-top:16px"><button class="btn-danger" data-del="${p.id}">Remove property</button></div>
   </td></tr>`;
 }
@@ -650,6 +668,21 @@ function wireDetail() {
     });
   $('#grid').querySelectorAll('[data-compare]').forEach(sel =>
     sel.onchange = () => { const v = sel.value; sel.value = ''; if (v) openCompare(sel.dataset.compare, v); });
+  $('#grid').querySelectorAll('[data-save]').forEach(b =>
+    b.onclick = async () => {
+      const id = b.dataset.save;
+      const patch = {};
+      $('#grid').querySelectorAll(`[data-eid="${id}"]`).forEach(inp => {
+        const k = inp.dataset.edit;
+        let v = inp.value.trim();
+        patch[k] = inp.type === 'number' ? (v === '' ? null : Number(v)) : (v === '' ? null : v);
+      });
+      b.disabled = true; b.textContent = 'Saving…';
+      const { error } = await db.from('properties').update(patch).eq('id', id);
+      if (error) { alert('Could not save: ' + error.message); b.disabled = false; b.textContent = 'Save changes'; return; }
+      COMPS_CACHE = {};   // postcode may have changed → let comps refetch
+      await load();
+    });
 }
 </script>
 </body>
