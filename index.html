@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HouseHunt</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --line:#e3e3df; --ink:#1c1c1a; --muted:#6b6b66; --accent:#2f6f4f; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink); background:var(--bg); }
+  header { display:flex; align-items:center; gap:12px; padding:12px 18px; background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  header h1 { font-size:16px; margin:0; font-weight:650; }
+  header .sp { flex:1; }
+  select, button, input { font:inherit; }
+  select, input { padding:6px 8px; border:1px solid var(--line); border-radius:7px; background:#fff; }
+  button { padding:6px 12px; border:1px solid var(--line); border-radius:7px; background:#fff; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .wrap { max-width:1200px; margin:0 auto; padding:18px; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th, td { padding:9px 11px; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { font-size:12px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); cursor:pointer; user-select:none; }
+  tr.row:hover { background:#fafaf8; cursor:pointer; }
+  td.addr { white-space:normal; min-width:200px; font-weight:600; }
+  .muted { color:var(--muted); }
+  .pill { display:inline-block; padding:1px 8px; border-radius:20px; font-size:12px; background:#eef2ee; color:var(--accent); }
+  .detail { background:#fbfbf9; }
+  .detail td { white-space:normal; }
+  .opinions { display:flex; gap:22px; flex-wrap:wrap; }
+  .op { flex:1; min-width:240px; }
+  .op h4 { margin:0 0 6px; font-size:13px; }
+  .op textarea { width:100%; min-height:64px; border:1px solid var(--line); border-radius:7px; padding:7px; font:inherit; resize:vertical; }
+  .login { max-width:340px; margin:14vh auto; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:26px; }
+  .login h1 { font-size:19px; margin:0 0 4px; }
+  .login p { color:var(--muted); margin:0 0 18px; }
+  .login label { display:block; font-size:13px; margin:12px 0 4px; }
+  .login input { width:100%; }
+  .login button { width:100%; margin-top:18px; }
+  .err { color:#b3261e; font-size:13px; margin-top:10px; min-height:18px; }
+  .empty { text-align:center; color:var(--muted); padding:50px; }
+  .stars { color:#c99700; letter-spacing:1px; }
+  .thumb { width:58px; height:44px; object-fit:cover; border-radius:5px; display:block; background:#eee; }
+  .chip { display:inline-block; padding:2px 9px; margin:0 5px 5px 0; background:#eef2ee; border-radius:20px; font-size:12px; }
+  .photo { width:240px; max-width:42%; border-radius:8px; float:right; margin:0 0 10px 16px; }
+  .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+  .toolbar input[type=text] { min-width:220px; }
+  .sub { font-size:11px; color:var(--muted); }
+  #map { height:420px; border:1px solid var(--line); border-radius:10px; margin-bottom:14px; display:none; }
+  .btn-danger { color:#b3261e; border-color:#e7c3c0; }
+  .leaflet-popup-content { font:13px/1.4 system-ui,sans-serif; }
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:20; display:none; align-items:flex-start; justify-content:center; overflow:auto; padding:30px 16px; }
+  .sheet { background:#fff; border-radius:12px; max-width:780px; width:100%; padding:22px; }
+  .cmp { width:100%; border-collapse:collapse; }
+  .cmp th, .cmp td { padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  .cmp .lbl { color:var(--muted); font-size:13px; width:34%; }
+  .cmp td.win { background:#eef6f0; font-weight:650; }
+</style>
+</head>
+<body>
+
+<!-- ===== CONFIG: edit these two lines only ===== -->
+<script>
+  const SUPABASE_URL = 'https://olgzfqoezthuakwhmdij.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_q8K7_jdwtibySs7_Q4mc_g_cra8WmEg';
+  const PEOPLE = [
+    { id: 'sven',    label: 'Sven' },
+    { id: 'partner', label: 'Sorrel' }   // keep id 'partner' so existing notes/ratings stay linked
+  ];
+  // Public-transport journey-time destinations (via TfL). Edit coordinates/labels freely.
+  const DESTINATIONS = [
+    { label: 'Victoria',        lat: 51.4952, lon: -0.1447 },
+    { label: 'Ealing Broadway', lat: 51.5152, lon: -0.3018 }
+  ];
+  const TFL_APP_KEY = ''; // optional: paste a free key from api-portal.tfl.gov.uk if you hit rate limits
+</script>
+
+<div id="login-view" style="display:none">
+  <div class="login">
+    <h1>HouseHunt</h1>
+    <p>Shared login for you and your partner.</p>
+    <label>Email</label>
+    <input id="email" type="email" autocomplete="username">
+    <label>Password</label>
+    <input id="password" type="password" autocomplete="current-password">
+    <button class="primary" id="login-btn">Log in</button>
+    <div class="err" id="login-err"></div>
+  </div>
+</div>
+
+<div id="app-view" style="display:none">
+  <header>
+    <h1>HouseHunt</h1>
+    <span class="muted" id="count"></span>
+    <span class="sp"></span>
+    <label class="muted" for="who" style="font-size:13px">Viewing as</label>
+    <select id="who"></select>
+    <button id="logout-btn">Log out</button>
+  </header>
+  <div class="wrap">
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="Search address or postcode…">
+      <select id="fstatus"><option value="">All statuses</option></select>
+      <label class="muted" style="font-size:13px"><input type="checkbox" id="hiderej"> Hide rejected</label>
+      <span style="flex:1"></span>
+      <button id="mapbtn">Map</button>
+    </div>
+    <div id="map"></div>
+    <div id="grid"></div>
+  </div>
+  <div id="compare" class="overlay"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let PROPERTIES = [];
+let SORT = { key: 'created_at', dir: -1 };
+let OPEN_ID = null;
+let pendingAdd = null;
+let FILTER = { q: '', status: '', hideRej: false };
+let MAP = null, MARKERS = [];
+let COMPS_CACHE = {};
+let TFL_CACHE = {};
+
+const STATUSES = ['shortlist','viewing','viewed','offer','rejected'];
+const $ = s => document.querySelector(s);
+const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function currentPerson() {
+  return localStorage.getItem('hh_person') || PEOPLE[0].id;
+}
+function personLabel(id) {
+  const p = PEOPLE.find(x => x.id === id); return p ? p.label : id;
+}
+function money(n) { return n==null ? '—' : '£' + Number(n).toLocaleString('en-GB'); }
+function ppsqm(p) {
+  if (p.price && p.floor_area_sqm) return '£' + Math.round(p.price / p.floor_area_sqm).toLocaleString('en-GB');
+  return '—';
+}
+
+function filteredList() {
+  return PROPERTIES.filter(p => {
+    if (FILTER.hideRej && p.status === 'rejected') return false;
+    if (FILTER.status && p.status !== FILTER.status) return false;
+    if (FILTER.q) {
+      const q = FILTER.q.toLowerCase();
+      if (!((p.address || '') + ' ' + (p.postcode || '')).toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+// ---------- map (Leaflet + OpenStreetMap) ----------
+function initMap() {
+  MAP = L.map('map').setView([51.509, -0.118], 10); // London
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { attribution: '© OpenStreetMap contributors', maxZoom: 19 }).addTo(MAP);
+}
+
+// use captured coords; fall back to postcodes.io (free, keyless) for any missing
+async function coordsFor(list) {
+  const missing = [...new Set(list.filter(p => !(p.enrichment?.lat && p.enrichment?.lon) && p.postcode).map(p => p.postcode))];
+  const geo = {};
+  if (missing.length) {
+    try {
+      const res = await fetch('https://api.postcodes.io/postcodes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postcodes: missing })
+      });
+      const j = await res.json();
+      (j.result || []).forEach(r => { if (r.result) geo[(r.query || '').toUpperCase()] = [r.result.latitude, r.result.longitude]; });
+    } catch (e) {}
+  }
+  return list.map(p => {
+    let lat = p.enrichment?.lat, lon = p.enrichment?.lon;
+    if ((lat == null || lon == null) && p.postcode && geo[p.postcode.toUpperCase()]) [lat, lon] = geo[p.postcode.toUpperCase()];
+    return { p, lat, lon };
+  }).filter(x => x.lat != null && x.lon != null);
+}
+
+async function refreshMap() {
+  if (!MAP) return;
+  MARKERS.forEach(m => MAP.removeLayer(m)); MARKERS = [];
+  const pts = await coordsFor(filteredList());
+  const bounds = [];
+  pts.forEach(({ p, lat, lon }) => {
+    const m = L.marker([lat, lon]).addTo(MAP);
+    m.bindPopup(`<b>${esc(p.address)}</b><br>${money(p.price)}${p.enrichment?.price_qualifier ? ' ' + esc(p.enrichment.price_qualifier) : ''}<br><a href="${esc(p.url)}" target="_blank" rel="noopener">listing ↗</a>`);
+    MARKERS.push(m); bounds.push([lat, lon]);
+  });
+  if (bounds.length) MAP.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
+}
+
+function maybeRefreshMap() { if (MAP && $('#map').style.display !== 'none') refreshMap(); }
+
+// ---------- head-to-head compare ----------
+function ratingOf(p, person) { const o = (p.property_opinions||[]).find(x => x.person === person); return (o && o.rating) || null; }
+
+function openCompare(idA, idB) {
+  const A = PROPERTIES.find(p => p.id === idA), B = PROPERTIES.find(p => p.id === idB);
+  if (!A || !B) return;
+  const ppm = p => (p.price && p.floor_area_sqm) ? p.price / p.floor_area_sqm : null;
+  const rows = [
+    { l:'Price', v:p=>money(p.price), c:p=>p.price, dir:'low' },
+    { l:'£/m²', v:p=>ppsqm(p), c:ppm, dir:'low' },
+    { l:'Floor area (m²)', v:p=>p.floor_area_sqm||'—', c:p=>p.floor_area_sqm, dir:'high' },
+    { l:'Beds', v:p=>p.beds??'—', c:p=>p.beds, dir:'high' },
+    { l:'Baths', v:p=>p.baths??'—', c:p=>p.baths, dir:'high' },
+    { l:'Type', v:p=>esc(p.property_type||'—') },
+    { l:'Tenure', v:p=>esc(p.tenure||'—')+(p.lease_years?` (${p.lease_years}y)`:'') },
+    { l:'Service charge/yr', v:p=>p.service_charge?money(p.service_charge):'—', c:p=>p.service_charge, dir:'low' },
+    { l:'Ground rent/yr', v:p=>p.ground_rent?money(p.ground_rent):'—', c:p=>p.ground_rent, dir:'low' },
+    { l:'Council tax', v:p=>esc(p.council_tax||'—') },
+    { l:'EPC', v:p=>esc(p.enrichment?.epc_rating||'—'), c:p=>p.enrichment?.epc_rating, dir:'lowStr' },
+    { l:'Crime', v:p=>esc(p.enrichment?.crime_level||'—') },
+    { l:'Nearest station', v:p=>esc((p.enrichment?.stations||[])[0]||'—') },
+    ...PEOPLE.map(pe => ({ l:pe.label+"'s rating", v:p=>{const r=ratingOf(p,pe.id);return r?r+'/10':'—';}, c:p=>ratingOf(p,pe.id), dir:'high' }))
+  ];
+  const better = (a,b,dir) => {
+    if (a==null||b==null||a===b) return 0;
+    if (dir==='low') return a<b?-1:1;
+    if (dir==='high') return a>b?-1:1;
+    if (dir==='lowStr') return String(a)<String(b)?-1:1;
+    return 0;
+  };
+  const head = p => `<div style="font-weight:650">${esc(p.address||'')}</div><div class="sub">${money(p.price)}${p.enrichment?.price_qualifier?' '+esc(p.enrichment.price_qualifier):''}</div>`;
+  const body = rows.map(r => {
+    let wa='', wb='';
+    if (r.c) { const w = better(r.c(A), r.c(B), r.dir); if (w<0) wa='win'; else if (w>0) wb='win'; }
+    return `<tr><td class="lbl">${r.l}</td><td class="${wa}">${r.v(A)}</td><td class="${wb}">${r.v(B)}</td></tr>`;
+  }).join('');
+  const el = $('#compare');
+  el.innerHTML = `<div class="sheet">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px">
+      <h2 style="margin:0; font-size:17px">Compare</h2><button id="cmp-close">Close</button></div>
+    <table class="cmp"><thead><tr><th class="lbl"></th><th>${head(A)}</th><th>${head(B)}</th></tr></thead>
+    <tbody>${body}</tbody></table>
+    <div class="sub" style="margin-top:12px">Highlight = better on that metric (lower price/costs, more space, higher rating, better EPC).</div>
+  </div>`;
+  el.style.display = 'flex';
+  el.querySelector('#cmp-close').onclick = () => { el.style.display = 'none'; };
+  el.onclick = e => { if (e.target === el) el.style.display = 'none'; };
+}
+
+// ---------- Land Registry sold comps (client-side, no key) ----------
+function median(arr) {
+  if (!arr.length) return null;
+  const a = [...arr].sort((x, y) => x - y), m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : Math.round((a[m - 1] + a[m]) / 2);
+}
+
+function summariseSales(sales) {
+  // Strong recency: tightest window with a usable sample. Never falls back to all-time —
+  // if there aren't >=3 sales within 5 years, we show no median rather than a misleading one.
+  const now = new Date();
+  let chosen = null, years = null;
+  for (const y of [2, 3, 5]) {
+    const cutoff = new Date(now.getFullYear() - y, now.getMonth(), now.getDate());
+    const arr = sales.filter(s => s.date >= cutoff).map(s => s.price);
+    if (arr.length >= 3) { chosen = arr; years = y; break; }
+  }
+  return {
+    count: sales.length,
+    median: chosen ? median(chosen) : null,
+    medianN: chosen ? chosen.length : 0,
+    windowYears: years,               // null when there's no reliable recent median
+    latest: sales[0] || null,
+    sales: sales.slice(0, 8)
+  };
+}
+
+function compsHtml(p, d) {
+  if (!d.count) return '<span class="muted">No sales recorded for this postcode.</span>';
+  const fmt = dt => dt.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+  let asking = '';
+  if (p.price && d.median) {
+    const diff = Math.round((p.price - d.median) / d.median * 100);
+    const col = diff > 0 ? '#b3261e' : '#2f6f4f';
+    asking = `<div style="margin-top:4px">Asking ${money(p.price)} is <b style="color:${col}">${diff > 0 ? '+' : ''}${diff}%</b> vs local median</div>`;
+  }
+  const rows = d.sales.map(s =>
+    `<tr><td style="padding:2px 10px 2px 0">${fmt(s.date)}</td><td style="padding:2px 10px 2px 0">${money(s.price)}</td><td class="muted" style="padding:2px 10px 2px 0">${esc(s.tenure)} ${esc(s.type)}</td><td class="muted" style="padding:2px 0">${esc([s.saon, s.paon].filter(Boolean).join(', '))}</td></tr>`).join('');
+  const medianPart = d.median
+    ? `median (last ${d.windowYears}y) <b>${money(d.median)}</b> <span class="sub">n=${d.medianN}</span>`
+    : `<span class="muted">no reliable median (fewer than 3 sales in the last 5 years)</span>`;
+  const lrUrl = `https://landregistry.data.gov.uk/app/ppd/search?postcode=${encodeURIComponent(p.postcode)}&limit=all`;
+  return `<b>Sold nearby</b> <span class="sub">Land Registry · ${esc(p.postcode)}</span>
+    <div style="margin-top:4px">${d.count} recorded sales · ${medianPart}${d.latest ? ` · latest ${money(d.latest.price)}, ${fmt(d.latest.date)}` : ''}</div>
+    ${asking}
+    <details style="margin-top:6px"><summary style="cursor:pointer; color:var(--muted)">Recent sales</summary>
+      <table style="margin-top:6px; border-collapse:collapse; font-size:13px">${rows}</table></details>
+    <div style="margin-top:6px"><a href="${lrUrl}" target="_blank" rel="noopener">View &amp; adjust on Land Registry ↗</a></div>`;
+}
+
+async function loadComps(p) {
+  const el = document.getElementById('comps-' + p.id);
+  if (!el) return;
+  const pc = (p.postcode || '').trim();
+  if (!pc) { el.innerHTML = '<span class="muted">No postcode captured — can’t fetch sold prices.</span>'; return; }
+  const cached = COMPS_CACHE[pc];
+  if (cached === 'loading') return;
+  if (cached) { el.innerHTML = compsHtml(p, cached); return; }
+  el.innerHTML = '<span class="muted">Loading sold prices…</span>';
+  COMPS_CACHE[pc] = 'loading';
+  try {
+    const url = `https://landregistry.data.gov.uk/data/ppi/transaction-record.json?propertyAddress.postcode=${encodeURIComponent(pc)}&_pageSize=150&_sort=-transactionDate`;
+    const r = await fetch(url);
+    const d = await r.json();
+    const sales = (d.result?.items || []).map(it => ({
+      price: it.pricePaid,
+      date: new Date(it.transactionDate),
+      type: it.propertyType?.prefLabel?.[0]?._value || it.propertyType?.label?.[0]?._value || '',
+      tenure: it.estateType?.prefLabel?.[0]?._value || '',
+      saon: it.propertyAddress?.saon || '',
+      paon: it.propertyAddress?.paon || ''
+    })).filter(s => s.price && !isNaN(+s.date)).sort((a, b) => b.date - a.date);
+    const data = summariseSales(sales);
+    COMPS_CACHE[pc] = data;
+    const el2 = document.getElementById('comps-' + p.id);
+    if (el2) el2.innerHTML = compsHtml(p, data);
+  } catch (e) {
+    COMPS_CACHE[pc] = null;
+    const el2 = document.getElementById('comps-' + p.id);
+    if (el2) el2.innerHTML = `<span class="muted">Couldn’t load sold prices (${esc(e.message)}).</span>`;
+  }
+}
+
+// ---------- TfL public-transport commute times ----------
+async function tflJourney(fromLat, fromLon, dest) {
+  const key = `${fromLat},${fromLon}>${dest.label}`;
+  if (key in TFL_CACHE) return TFL_CACHE[key];
+  const modes = 'tube,dlr,overground,elizabeth-line,national-rail,bus,tram';
+  let url = `https://api.tfl.gov.uk/Journey/JourneyResults/${fromLat},${fromLon}/to/${dest.lat},${dest.lon}?mode=${modes}`;
+  if (TFL_APP_KEY) url += `&app_key=${TFL_APP_KEY}`;
+  const r = await fetch(url);              // let errors propagate so we can retry (no caching of failures)
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const d = await r.json();
+  const journeys = (d.journeys || []).filter(j => typeof j.duration === 'number');
+  if (!journeys.length) { TFL_CACHE[key] = null; return null; }
+  const best = journeys.reduce((a, b) => b.duration < a.duration ? b : a);
+  const legs = (best.legs || []).map(l => ({
+    summary: (l.instruction && l.instruction.summary) || '',
+    mode: (l.mode && l.mode.name) || '',
+    duration: l.duration
+  }));
+  // Drop the trailing walk into the destination station — redundant when the station is the destination.
+  while (legs.length > 1 && /walk/i.test(legs[legs.length - 1].mode)) legs.pop();
+  const out = { duration: best.duration, legs };
+  TFL_CACHE[key] = out;
+  return out;
+}
+
+async function loadCommute(p) {
+  const el = document.getElementById('commute-' + p.id);
+  if (!el) return;
+  const lat = p.enrichment?.lat, lon = p.enrichment?.lon;
+  if (lat == null || lon == null) { el.innerHTML = '<span class="muted">No coordinates captured — can’t estimate commute.</span>'; return; }
+  el.innerHTML = '<span class="muted">Estimating public-transport times…</span>';
+  try {
+    const blocks = await Promise.all(DESTINATIONS.map(async dest => {
+      const j = await tflJourney(lat, lon, dest);
+      if (!j) return `<div style="margin-top:4px"><b>${esc(dest.label)}</b>: —</div>`;
+      const legs = j.legs.map(l =>
+        `<li style="margin:2px 0">${esc(l.summary || l.mode || 'leg')} <span class="sub">${l.duration} min</span></li>`).join('');
+      return `<details style="margin-top:4px"><summary style="cursor:pointer">${esc(dest.label)}: <b>~${j.duration} min</b></summary>
+        <ol style="margin:6px 0 2px 20px; padding:0; font-size:13px">${legs}</ol></details>`;
+    }));
+    el.innerHTML = `<b>Public transport</b> <span class="sub">via TfL, door-to-door</span>${blocks.join('')}`;
+  } catch (e) {
+    el.innerHTML = `<span class="muted">Couldn’t load commute times (${esc(e.message)}).</span>`;
+  }
+}
+
+// ---------- boot ----------
+(async function init() {
+  // capture any incoming property from the bookmarklet before anything else
+  if (location.hash.startsWith('#add=')) {
+    try { pendingAdd = JSON.parse(decodeURIComponent(location.hash.slice(5))); } catch (e) {}
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+  const { data: { session } } = await db.auth.getSession();
+  session ? showApp() : showLogin();
+})();
+
+function showLogin() {
+  $('#login-view').style.display = 'block';
+  $('#app-view').style.display = 'none';
+}
+
+$('#login-btn').onclick = async () => {
+  $('#login-err').textContent = '';
+  const { error } = await db.auth.signInWithPassword({
+    email: $('#email').value.trim(), password: $('#password').value
+  });
+  if (error) { $('#login-err').textContent = error.message; return; }
+  showApp();
+};
+$('#password').addEventListener('keydown', e => { if (e.key === 'Enter') $('#login-btn').click(); });
+
+$('#logout-btn').onclick = async () => { await db.auth.signOut(); location.reload(); };
+
+async function showApp() {
+  $('#login-view').style.display = 'none';
+  $('#app-view').style.display = 'block';
+
+  // identity dropdown
+  const who = $('#who');
+  who.innerHTML = PEOPLE.map(p => `<option value="${p.id}">${esc(p.label)}</option>`).join('');
+  who.value = currentPerson();
+  who.onchange = () => { localStorage.setItem('hh_person', who.value); render(); };
+
+  // filter toolbar
+  const fstatus = $('#fstatus');
+  fstatus.innerHTML = '<option value="">All statuses</option>' + STATUSES.map(s => `<option value="${s}">${s}</option>`).join('');
+  $('#search').oninput = e => { FILTER.q = e.target.value; render(); };
+  fstatus.onchange = e => { FILTER.status = e.target.value; render(); };
+  $('#hiderej').onchange = e => { FILTER.hideRej = e.target.checked; render(); };
+
+  // map toggle
+  $('#mapbtn').onclick = () => {
+    const el = $('#map');
+    const show = el.style.display === 'none' || !el.style.display;
+    el.style.display = show ? 'block' : 'none';
+    $('#mapbtn').textContent = show ? 'Hide map' : 'Map';
+    if (show) { if (!MAP) initMap(); setTimeout(() => { MAP.invalidateSize(); refreshMap(); }, 60); }
+  };
+
+  if (pendingAdd) { await saveProperty(pendingAdd); pendingAdd = null; }
+  await load();
+}
+
+// ---------- data ----------
+async function saveProperty(d) {
+  d.added_by = currentPerson();
+  const { error } = await db.from('properties')
+    .upsert(d, { onConflict: 'portal,listing_id' });
+  if (error) alert('Could not save: ' + error.message);
+}
+
+async function load() {
+  const { data, error } = await db.from('properties')
+    .select('*, property_opinions(*)')
+    .order('created_at', { ascending: false });
+  if (error) { $('#grid').innerHTML = `<div class="empty">Error: ${esc(error.message)}</div>`; return; }
+  PROPERTIES = data || [];
+  render();
+}
+
+async function saveOpinion(propertyId, person, patch) {
+  const existing = (PROPERTIES.find(p => p.id === propertyId)?.property_opinions || [])
+    .find(o => o.person === person) || {};
+  const row = { property_id: propertyId, person,
+    rating: patch.rating !== undefined ? patch.rating : existing.rating ?? null,
+    notes:  patch.notes  !== undefined ? patch.notes  : existing.notes  ?? null,
+    updated_at: new Date().toISOString() };
+  const { error } = await db.from('property_opinions')
+    .upsert(row, { onConflict: 'property_id,person' });
+  if (error) { alert('Could not save note: ' + error.message); return; }
+  await load();
+}
+
+async function setStatus(propertyId, status) {
+  await db.from('properties').update({ status }).eq('id', propertyId);
+  const p = PROPERTIES.find(x => x.id === propertyId); if (p) p.status = status;
+}
+
+// ---------- render ----------
+const COLS = [
+  { key:'thumb',         label:'',         nosort:true, get:p=> p.enrichment?.image_url ? `<img class="thumb" src="${esc(p.enrichment.image_url)}" loading="lazy" referrerpolicy="no-referrer">` : '' },
+  { key:'address',       label:'Address',  get:p=>`<span class="addr">${esc(p.address)}</span><br><span class="muted">${esc(p.postcode||'')}</span>` },
+  { key:'price',         label:'Price',    get:p=>money(p.price)+(p.enrichment?.price_qualifier?`<div class="sub">${esc(p.enrichment.price_qualifier)}</div>`:'') },
+  { key:'ppsqm',         label:'£/m²',     get:p=>ppsqm(p), sortVal:p=>(p.price&&p.floor_area_sqm)?p.price/p.floor_area_sqm:Infinity },
+  { key:'floor_area_sqm',label:'Area m²',  get:p=>p.floor_area_sqm||'—' },
+  { key:'beds',          label:'Beds',     get:p=>p.beds??'—' },
+  { key:'property_type', label:'Type',     get:p=>esc(p.property_type||'—') },
+  { key:'tenure',        label:'Tenure',   get:p=>esc(p.tenure||'—') + (p.lease_years?` <span class="muted">· ${p.lease_years}y</span>`:'') },
+  { key:'service_charge',label:'Svc/yr',   get:p=>p.service_charge?money(p.service_charge):'—', sortVal:p=>p.service_charge==null?Infinity:p.service_charge },
+  { key:'epc',           label:'EPC',      get:p=>esc(p.enrichment?.epc_rating||'—'), sortVal:p=>p.enrichment?.epc_rating||'zz' },
+  { key:'crime',         label:'Crime',    get:p=>esc(p.enrichment?.crime_level||'—') },
+  { key:'council_tax',   label:'Council',  get:p=>esc(p.council_tax||'—') },
+  { key:'status',        label:'Status',   get:p=>`<span class="pill">${esc(p.status||'')}</span>` }
+];
+
+function ratingFor(p, person) {
+  const o = (p.property_opinions||[]).find(x => x.person === person);
+  const r = o && o.rating;
+  return r ? `<b>${r}</b><span class="sub">/10</span>` : '<span class="muted">—</span>';
+}
+
+function render() {
+  if (!PROPERTIES.length) {
+    $('#count').textContent = '';
+    $('#grid').innerHTML = `<div class="empty">No properties yet. Open a listing and click your <b>Save to HouseHunt</b> bookmarklet.</div>`;
+    return;
+  }
+
+  const list = filteredList();
+
+  $('#count').textContent = list.length === PROPERTIES.length
+    ? `${PROPERTIES.length} ${PROPERTIES.length===1?'property':'properties'}`
+    : `${list.length} of ${PROPERTIES.length}`;
+
+  if (!list.length) { $('#grid').innerHTML = `<div class="empty">No matches.</div>`; return; }
+
+  const sorted = [...list].sort((a,b) => {
+    const col = COLS.find(c => c.key === SORT.key);
+    let va, vb;
+    if (SORT.key === 'created_at') { va = a.created_at; vb = b.created_at; }
+    else if (col && col.sortVal) { va = col.sortVal(a); vb = col.sortVal(b); }
+    else { va = a[SORT.key]; vb = b[SORT.key]; }
+    if (va == null) va = SORT.dir===1 ? Infinity : -Infinity;
+    if (vb == null) vb = SORT.dir===1 ? Infinity : -Infinity;
+    return (va > vb ? 1 : va < vb ? -1 : 0) * SORT.dir;
+  });
+
+  const head = COLS.map(c => c.nosort
+      ? `<th>${c.label}</th>`
+      : `<th data-k="${c.key}">${c.label}${SORT.key===c.key?(SORT.dir===1?' ▲':' ▼'):''}</th>`).join('')
+             + PEOPLE.map(p => `<th>${esc(p.label)}</th>`).join('');
+
+  const rows = sorted.map(p => {
+    const cells = COLS.map(c => `<td>${c.get(p)}</td>`).join('')
+                + PEOPLE.map(pe => `<td>${ratingFor(p, pe.id)}</td>`).join('');
+    let out = `<tr class="row" data-id="${p.id}">${cells}</tr>`;
+    if (OPEN_ID === p.id) out += detailRow(p);
+    return out;
+  }).join('');
+
+  $('#grid').innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+
+  $('#grid').querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
+    const k = th.dataset.k;
+    if (SORT.key === k) SORT.dir *= -1; else { SORT.key = k; SORT.dir = 1; }
+    render();
+  });
+  $('#grid').querySelectorAll('tr.row').forEach(tr => tr.onclick = e => {
+    if (e.target.closest('.detail')) return;
+    OPEN_ID = OPEN_ID === tr.dataset.id ? null : tr.dataset.id; render();
+  });
+  wireDetail();
+  maybeRefreshMap();
+  if (OPEN_ID) { const op = PROPERTIES.find(x => x.id === OPEN_ID); if (op) { loadComps(op); loadCommute(op); } }
+}
+
+function detailRow(p) {
+  const colspan = COLS.length + PEOPLE.length;
+  const e = p.enrichment || {};
+  const stations = (e.stations || []).join(' · ');
+  const statusSel = `<select data-status="${p.id}">${STATUSES.map(s=>`<option ${s===p.status?'selected':''}>${s}</option>`).join('')}</select>`;
+  const links = [
+    `<a href="${esc(p.url)}" target="_blank" rel="noopener">view listing ↗</a>`,
+    e.floorplan_url ? `<a href="${esc(e.floorplan_url)}" target="_blank" rel="noopener">floorplan ↗</a>` : '',
+    e.num_images ? `<span class="muted">${e.num_images} photos</span>` : ''
+  ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+  const features = (e.features || []).map(f => `<span class="chip">${esc(f)}</span>`).join('');
+  const others = PROPERTIES.filter(x => x.id !== p.id);
+  const compareSel = others.length
+    ? `<select data-compare="${p.id}"><option value="">Compare with…</option>${others.map(o => `<option value="${o.id}">${esc(o.address||o.id)}</option>`).join('')}</select>`
+    : '';
+  const me = currentPerson();
+  const ops = PEOPLE.map(pe => {
+    const o = (p.property_opinions||[]).find(x => x.person === pe.id) || {};
+    if (pe.id === me) {
+      const ratingSel = `<select data-rating="${p.id}" data-person="${pe.id}">
+        <option value="">—</option>${Array.from({length:10},(_,i)=>i+1).map(n=>`<option value="${n}" ${o.rating==n?'selected':''}>${n}</option>`).join('')}</select>`;
+      return `<div class="op"><h4>My rating &amp; notes</h4>
+        <div>Rating: ${ratingSel} <span class="sub">/10</span></div>
+        <textarea data-notes="${p.id}" data-person="${pe.id}" placeholder="My notes…">${esc(o.notes||'')}</textarea></div>`;
+    }
+    return `<div class="op"><h4>${esc(pe.label)}</h4>
+      <div>Rating: ${o.rating?`<b>${o.rating}</b><span class="sub">/10</span>`:'<span class="muted">—</span>'}</div>
+      <div class="muted" style="white-space:pre-wrap; margin-top:6px">${o.notes?esc(o.notes):'No notes yet'}</div></div>`;
+  }).join('');
+  return `<tr class="detail"><td colspan="${colspan}">
+    ${e.image_url?`<img class="photo" src="${esc(e.image_url)}" referrerpolicy="no-referrer">`:''}
+    <div style="margin-bottom:3px"><b>${esc(e.title||p.address)}</b></div>
+    <div class="muted" style="margin-bottom:10px">${esc(p.address)}${e.added_label?` · ${esc(e.added_label)}`:''}</div>
+    <div style="margin-bottom:10px">${links}${p.agent?` &nbsp;·&nbsp; ${esc(p.agent)}`:''}${e.for_sale===false?' &nbsp;·&nbsp; <span class="muted">(rental)</span>':''}</div>
+    ${p.tenure?`<div style="margin-bottom:10px">${esc(p.tenure)}${p.lease_years?` · ${p.lease_years} yrs left`:''}${p.service_charge?` · service charge ${money(p.service_charge)}/yr`:''}${p.ground_rent?` · ground rent ${money(p.ground_rent)}/yr`:''}${p.council_tax?` · council tax ${esc(p.council_tax)}`:''}</div>`:''}
+    ${stations?`<div class="muted" style="margin-bottom:10px">Stations: ${esc(stations)}</div>`:''}
+    <div id="commute-${p.id}" style="margin-bottom:10px"></div>
+    ${e.description?`<details style="margin-bottom:10px"><summary style="cursor:pointer; color:var(--muted)">Description</summary><div style="white-space:pre-wrap; margin-top:6px">${esc(e.description)}</div></details>`:''}
+    ${features?`<div style="margin-bottom:12px">${features}</div>`:''}
+    <div class="comps" id="comps-${p.id}" style="margin:10px 0; border-top:1px solid var(--line); padding-top:10px"></div>
+    <div style="margin-bottom:14px">Status: ${statusSel}${compareSel?` &nbsp;&nbsp; ${compareSel}`:''}</div>
+    <div class="opinions">${ops}</div>
+    <div style="margin-top:16px"><button class="btn-danger" data-del="${p.id}">Remove property</button></div>
+  </td></tr>`;
+}
+
+function wireDetail() {
+  $('#grid').querySelectorAll('[data-status]').forEach(sel =>
+    sel.onchange = () => setStatus(sel.dataset.status, sel.value).then(render));
+  $('#grid').querySelectorAll('[data-rating]').forEach(sel =>
+    sel.onchange = () => saveOpinion(sel.dataset.rating, sel.dataset.person, { rating: sel.value?Number(sel.value):null }));
+  $('#grid').querySelectorAll('[data-notes]').forEach(t =>
+    t.onblur = () => {
+      const p = PROPERTIES.find(x => x.id === t.dataset.notes);
+      const cur = (p?.property_opinions||[]).find(o => o.person === t.dataset.person)?.notes || '';
+      if (t.value !== cur) saveOpinion(t.dataset.notes, t.dataset.person, { notes: t.value });
+    });
+  $('#grid').querySelectorAll('[data-del]').forEach(b =>
+    b.onclick = async () => {
+      if (!confirm('Remove this property from HouseHunt? This cannot be undone.')) return;
+      const { error } = await db.from('properties').delete().eq('id', b.dataset.del);
+      if (error) { alert('Could not remove: ' + error.message); return; }
+      OPEN_ID = null; await load();
+    });
+  $('#grid').querySelectorAll('[data-compare]').forEach(sel =>
+    sel.onchange = () => { const v = sel.value; sel.value = ''; if (v) openCompare(sel.dataset.compare, v); });
+}
+</script>
+</body>
+</html>
