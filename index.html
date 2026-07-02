@@ -46,6 +46,7 @@
   .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
   .toolbar input[type=text] { min-width:220px; }
   .sub { font-size:11px; color:var(--muted); }
+  .stale { color:#b3261e; font-weight:600; }
   #map { height:420px; border:1px solid var(--line); border-radius:10px; margin-bottom:14px; display:none; }
   .btn-danger { color:#b3261e; border-color:#e7c3c0; }
   .leaflet-popup-content { font:13px/1.4 system-ui,sans-serif; }
@@ -102,6 +103,7 @@
       <input type="text" id="search" placeholder="Search address or postcode…">
       <select id="fstatus"><option value="">All statuses</option></select>
       <label class="muted" style="font-size:13px"><input type="checkbox" id="hiderej"> Hide rejected</label>
+      <label class="muted" style="font-size:13px"><input type="checkbox" id="staleonly"> Needs re-check (14+ days)</label>
       <span style="flex:1"></span>
       <button id="mapbtn">Map</button>
     </div>
@@ -120,7 +122,7 @@ let PROPERTIES = [];
 let SORT = { key: 'created_at', dir: -1 };
 let OPEN_ID = null;
 let pendingAdd = null;
-let FILTER = { q: '', status: '', hideRej: false };
+let FILTER = { q: '', status: '', hideRej: false, staleOnly: false };
 let MAP = null, MARKERS = [];
 let COMPS_CACHE = {};
 let TFL_CACHE = {};
@@ -141,9 +143,28 @@ function ppsqm(p) {
   return '—';
 }
 
+function lastSeen(p) { return p.enrichment?.last_seen || p.created_at; }
+function daysSince(iso) { return iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null; }
+function seenLabel(p) { const d = daysSince(lastSeen(p)); return d == null ? '—' : d === 0 ? 'today' : d + 'd'; }
+function isStale(p) { const d = daysSince(lastSeen(p)); return d != null && d >= 14; }
+function prettify(s) { return String(s).replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
+function statusBadge(p) {
+  const s = (p.enrichment?.listing_status || '').toLowerCase();
+  if (/under|offer|sold|stc|withdraw|let/.test(s)) return `<span class="pill" style="background:#fde8e6;color:#b3261e">${esc(prettify(s))}</span>`;
+  return '';
+}
+function priceDrop(p) {           // returns the previous higher price if the current one is a reduction
+  const h = p.enrichment?.price_history;
+  if (!h || h.length < 2) return null;
+  const cur = h[h.length - 1].price;
+  const prevMax = Math.max(...h.slice(0, -1).map(x => x.price));
+  return cur < prevMax ? prevMax : null;
+}
+
 function filteredList() {
   return PROPERTIES.filter(p => {
     if (FILTER.hideRej && p.status === 'rejected') return false;
+    if (FILTER.staleOnly && !isStale(p)) return false;
     if (FILTER.status && p.status !== FILTER.status) return false;
     if (FILTER.q) {
       const q = FILTER.q.toLowerCase();
@@ -418,6 +439,7 @@ async function showApp() {
   $('#search').oninput = e => { FILTER.q = e.target.value; render(); };
   fstatus.onchange = e => { FILTER.status = e.target.value; render(); };
   $('#hiderej').onchange = e => { FILTER.hideRej = e.target.checked; render(); };
+  $('#staleonly').onchange = e => { FILTER.staleOnly = e.target.checked; render(); };
 
   // map toggle
   $('#mapbtn').onclick = () => {
@@ -435,8 +457,22 @@ async function showApp() {
 // ---------- data ----------
 async function saveProperty(d) {
   d.added_by = currentPerson();
-  const { error } = await db.from('properties')
-    .upsert(d, { onConflict: 'portal,listing_id' });
+  const now = new Date().toISOString();
+  d.enrichment = d.enrichment || {};
+  d.enrichment.last_seen = now;
+  // Merge price history from any existing row so a re-capture flags reductions instead of overwriting.
+  let existing = null;
+  try {
+    const { data } = await db.from('properties').select('price, enrichment')
+      .eq('portal', d.portal).eq('listing_id', String(d.listing_id)).limit(1);
+    existing = data && data[0];
+  } catch (e) {}
+  const hist = (existing && existing.enrichment && Array.isArray(existing.enrichment.price_history))
+    ? existing.enrichment.price_history.slice() : [];
+  const lastPrice = hist.length ? hist[hist.length - 1].price : (existing ? existing.price : null);
+  if (d.price != null && d.price !== lastPrice) hist.push({ price: d.price, at: now });
+  d.enrichment.price_history = hist;
+  const { error } = await db.from('properties').upsert(d, { onConflict: 'portal,listing_id' });
   if (error) alert('Could not save: ' + error.message);
 }
 
@@ -470,8 +506,8 @@ async function setStatus(propertyId, status) {
 // ---------- render ----------
 const COLS = [
   { key:'thumb',         label:'',         nosort:true, get:p=> p.enrichment?.image_url ? `<img class="thumb" src="${esc(p.enrichment.image_url)}" loading="lazy" referrerpolicy="no-referrer">` : '' },
-  { key:'address',       label:'Address',  get:p=>`<span class="addr">${esc(p.address)}</span><br><span class="muted">${esc(p.postcode||'')}</span>` },
-  { key:'price',         label:'Price',    get:p=>money(p.price)+(p.enrichment?.price_qualifier?`<div class="sub">${esc(p.enrichment.price_qualifier)}</div>`:'') },
+  { key:'address',       label:'Address',  get:p=>`<span class="addr">${esc(p.address)}</span> ${statusBadge(p)}<br><span class="muted">${esc(p.postcode||'')}</span>` },
+  { key:'price',         label:'Price',    get:p=>money(p.price)+(p.enrichment?.price_qualifier?`<div class="sub">${esc(p.enrichment.price_qualifier)}</div>`:'')+(priceDrop(p)?`<div class="sub" style="color:#2f6f4f">▼ from ${money(priceDrop(p))}</div>`:'') },
   { key:'ppsqm',         label:'£/m²',     get:p=>ppsqm(p), sortVal:p=>(p.price&&p.floor_area_sqm)?p.price/p.floor_area_sqm:Infinity },
   { key:'floor_area_sqm',label:'Area m²',  get:p=>p.floor_area_sqm||'—' },
   { key:'beds',          label:'Beds',     get:p=>p.beds??'—' },
@@ -481,7 +517,8 @@ const COLS = [
   { key:'epc',           label:'EPC',      get:p=>esc(p.enrichment?.epc_rating||'—'), sortVal:p=>p.enrichment?.epc_rating||'zz' },
   { key:'crime',         label:'Crime',    get:p=>esc(p.enrichment?.crime_level||'—') },
   { key:'council_tax',   label:'Council',  get:p=>esc(p.council_tax||'—') },
-  { key:'status',        label:'Status',   get:p=>`<span class="pill">${esc(p.status||'')}</span>` }
+  { key:'status',        label:'Status',   get:p=>`<span class="pill">${esc(p.status||'')}</span>` },
+  { key:'seen',          label:'Seen',     get:p=>`<span class="${isStale(p)?'stale':'muted'}">${seenLabel(p)}</span>`, sortVal:p=>{const d=daysSince(lastSeen(p));return d==null?Infinity:d;} }
 ];
 
 function ratingFor(p, person) {
@@ -576,9 +613,11 @@ function detailRow(p) {
   }).join('');
   return `<tr class="detail"><td colspan="${colspan}">
     ${e.image_url?`<img class="photo" src="${esc(e.image_url)}" referrerpolicy="no-referrer">`:''}
-    <div style="margin-bottom:3px"><b>${esc(e.title||p.address)}</b></div>
+    <div style="margin-bottom:3px"><b>${esc(e.title||p.address)}</b> ${statusBadge(p)}</div>
     <div class="muted" style="margin-bottom:10px">${esc(p.address)}${e.added_label?` · ${esc(e.added_label)}`:''}</div>
     <div style="margin-bottom:10px">${links}${p.agent?` &nbsp;·&nbsp; ${esc(p.agent)}`:''}${e.for_sale===false?' &nbsp;·&nbsp; <span class="muted">(rental)</span>':''}</div>
+    <div class="sub" style="margin-bottom:10px">Last seen ${seenLabel(p) === 'today' ? 'today' : seenLabel(p) + ' ago'} · first saved ${p.created_at ? new Date(p.created_at).toLocaleDateString('en-GB') : '—'} · <a href="${esc(p.url)}" target="_blank" rel="noopener">re-check ↗</a> <span class="muted">(re-click the bookmarklet there to refresh)</span></div>
+    ${(e.price_history && e.price_history.length > 1) ? `<div class="sub" style="margin-bottom:10px">Price history: ${e.price_history.map(h => money(h.price) + ' (' + new Date(h.at).toLocaleDateString('en-GB',{month:'short',year:'2-digit'}) + ')').join(' → ')}</div>` : ''}
     ${p.tenure?`<div style="margin-bottom:10px">${esc(p.tenure)}${p.lease_years?` · ${p.lease_years} yrs left`:''}${p.service_charge?` · service charge ${money(p.service_charge)}/yr`:''}${p.ground_rent?` · ground rent ${money(p.ground_rent)}/yr`:''}${p.council_tax?` · council tax ${esc(p.council_tax)}`:''}</div>`:''}
     ${stations?`<div class="muted" style="margin-bottom:10px">Stations: ${esc(stations)}</div>`:''}
     <div id="commute-${p.id}" style="margin-bottom:10px"></div>
