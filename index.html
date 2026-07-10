@@ -138,10 +138,375 @@ function personLabel(id) {
   const p = PEOPLE.find(x => x.id === id); return p ? p.label : id;
 }
 function money(n) { return n==null ? '—' : '£' + Number(n).toLocaleString('en-GB'); }
+
+// ---------- council tax (estimated £/yr from band + local authority) ----------
+// Band D "area council tax" (all precepts incl., parish precepts averaged) per English
+// billing authority, keyed by ONS GSS code. Source: GOV.UK Band D live table (Area_CT).
+// Refresh next April: download the new ODS from the live tables page and run
+// scripts/update_council_tax.py — it regenerates the block between the markers below.
+const CT_YEAR = '2026/27';
+// CT_RATES_START (generated — do not edit by hand)
+const CT_BAND_D = { // 296 English billing authorities, 2026 to 2027
+  'E07000223': 2548.28, // Adur
+  'E07000032': 2407.69, // Amber Valley
+  'E07000224': 2487.24, // Arun
+  'E07000170': 2608.76, // Ashfield
+  'E07000105': 2410.16, // Ashford
+  'E07000200': 2341.55, // Babergh
+  'E09000002': 2198.51, // Barking & Dagenham
+  'E09000003': 2132.60, // Barnet
+  'E08000038': 2325.96, // Barnsley
+  'E07000066': 2327.24, // Basildon
+  'E07000084': 2255.21, // Basingstoke & Deane
+  'E07000171': 2644.95, // Bassetlaw
+  'E06000022': 2383.42, // Bath & North East Somerset UA
+  'E06000055': 2471.74, // Bedford UA
+  'E09000004': 2366.36, // Bexley
+  'E08000025': 2362.90, // Birmingham
+  'E07000129': 2490.22, // Blaby
+  'E06000008': 2455.27, // Blackburn with Darwen UA
+  'E06000009': 2513.22, // Blackpool UA
+  'E07000033': 2559.41, // Bolsover
+  'E08000001': 2399.74, // Bolton
+  'E07000136': 2308.73, // Boston
+  'E06000058': 2435.58, // Bournemouth, Christchurch & Poole
+  'E06000036': 2264.80, // Bracknell Forest UA
+  'E08000032': 2360.73, // Bradford
+  'E07000067': 2280.34, // Braintree
+  'E07000143': 2443.67, // Breckland
+  'E09000005': 2235.27, // Brent
+  'E07000068': 2258.14, // Brentwood
+  'E06000043': 2580.54, // Brighton & Hove UA
+  'E06000023': 2713.68, // Bristol UA
+  'E07000144': 2437.78, // Broadland
+  'E09000006': 2140.04, // Bromley
+  'E07000234': 2478.65, // Bromsgrove
+  'E07000095': 2306.43, // Broxbourne
+  'E07000172': 2618.21, // Broxtowe
+  'E06000060': 2526.58, // Buckinghamshire UA
+  'E07000117': 2549.42, // Burnley
+  'E08000002': 2555.15, // Bury
+  'E08000033': 2420.15, // Calderdale
+  'E07000008': 2467.02, // Cambridge
+  'E09000007': 2207.55, // Camden
+  'E07000192': 2375.83, // Cannock Chase
+  'E07000106': 2419.33, // Canterbury
+  'E07000069': 2318.63, // Castle Point
+  'E06000056': 2516.16, // Central Bedfordshire UA
+  'E07000130': 2405.64, // Charnwood
+  'E07000070': 2300.18, // Chelmsford
+  'E07000078': 2369.52, // Cheltenham
+  'E07000177': 2582.96, // Cherwell
+  'E06000049': 2454.87, // Cheshire East UA
+  'E06000050': 2517.33, // Cheshire West and Chester UA
+  'E07000034': 2339.49, // Chesterfield
+  'E07000225': 2469.68, // Chichester
+  'E07000118': 2430.23, // Chorley
+  'E09000001': 1329.56, // City of London
+  'E06000018': 2755.39, // City of Nottingham UA
+  'E07000071': 2282.85, // Colchester
+  'E06000052': 2590.93, // Cornwall UA
+  'E07000079': 2391.65, // Cotswold
+  'E08000026': 2516.72, // Coventry
+  'E07000226': 2418.46, // Crawley
+  'E09000008': 2599.91, // Croydon
+  'E06000063': 2511.32, // Cumberland
+  'E07000096': 2408.51, // Dacorum
+  'E06000005': 2493.83, // Darlington UA
+  'E07000107': 2375.15, // Dartford
+  'E06000015': 2306.00, // Derby City UA
+  'E07000035': 2444.70, // Derbyshire Dales
+  'E08000017': 2167.75, // Doncaster
+  'E06000059': 2765.02, // Dorset Council
+  'E07000108': 2461.74, // Dover
+  'E08000027': 2144.84, // Dudley
+  'E06000047': 2622.15, // Durham UA
+  'E09000009': 2138.53, // Ealing
+  'E07000009': 2485.18, // East Cambridgeshire
+  'E07000040': 2595.46, // East Devon
+  'E07000085': 2343.92, // East Hampshire
+  'E07000242': 2454.78, // East Hertfordshire
+  'E07000137': 2275.88, // East Lindsey
+  'E06000011': 2466.08, // East Riding of Yorkshire UA
+  'E07000193': 2351.34, // East Staffordshire
+  'E07000244': 2334.80, // East Suffolk
+  'E07000061': 2654.28, // Eastbourne
+  'E07000086': 2342.21, // Eastleigh
+  'E07000207': 2557.75, // Elmbridge
+  'E09000010': 2267.67, // Enfield
+  'E07000072': 2277.21, // Epping Forest
+  'E07000208': 2530.84, // Epsom & Ewell
+  'E07000036': 2360.64, // Erewash
+  'E07000041': 2495.36, // Exeter
+  'E07000087': 2270.55, // Fareham
+  'E07000010': 2537.74, // Fenland
+  'E07000112': 2538.75, // Folkestone & Hythe
+  'E07000080': 2443.42, // Forest of Dean
+  'E07000119': 2483.94, // Fylde
+  'E08000037': 2715.81, // Gateshead
+  'E07000173': 2609.55, // Gedling
+  'E07000081': 2355.84, // Gloucester
+  'E07000088': 2344.29, // Gosport
+  'E07000109': 2408.24, // Gravesham
+  'E07000145': 2414.41, // Great Yarmouth
+  'E09000011': 2107.86, // Greenwich
+  'E07000209': 2547.30, // Guildford
+  'E09000012': 2060.30, // Hackney
+  'E06000006': 2366.61, // Halton UA
+  'E09000013': 1519.51, // Hammersmith & Fulham
+  'E07000131': 2389.87, // Harborough
+  'E09000014': 2313.78, // Haringey
+  'E07000073': 2298.69, // Harlow
+  'E09000015': 2511.07, // Harrow
+  'E07000089': 2400.02, // Hart
+  'E06000001': 2560.20, // Hartlepool UA
+  'E07000062': 2676.58, // Hastings
+  'E07000090': 2320.28, // Havant
+  'E09000016': 2424.66, // Havering
+  'E06000019': 2574.37, // Herefordshire UA
+  'E07000098': 2405.83, // Hertsmere
+  'E07000037': 2384.66, // High Peak
+  'E09000017': 2045.46, // Hillingdon
+  'E07000132': 2382.62, // Hinckley & Bosworth
+  'E07000227': 2441.01, // Horsham
+  'E09000018': 2185.56, // Hounslow
+  'E07000011': 2556.40, // Huntingdonshire
+  'E07000120': 2465.98, // Hyndburn
+  'E07000202': 2468.25, // Ipswich
+  'E06000046': 2625.79, // Isle of Wight UA
+  'E06000053': 2047.96, // Isles of Scilly
+  'E09000019': 2108.15, // Islington
+  'E09000020': 1666.65, // Kensington & Chelsea
+  'E07000146': 2430.13, // King's Lynn & West Norfolk
+  'E06000010': 2295.04, // Kingston upon Hull UA
+  'E09000021': 2609.20, // Kingston upon Thames
+  'E08000034': 2441.07, // Kirklees
+  'E08000011': 2488.25, // Knowsley
+  'E09000022': 2047.11, // Lambeth
+  'E07000121': 2503.19, // Lancaster
+  'E08000035': 2283.73, // Leeds
+  'E06000016': 2528.75, // Leicester City UA
+  'E07000063': 2756.17, // Lewes
+  'E09000023': 2237.33, // Lewisham
+  'E07000194': 2351.90, // Lichfield
+  'E07000138': 2323.08, // Lincoln
+  'E08000012': 2673.59, // Liverpool
+  'E06000032': 2439.93, // Luton UA
+  'E07000110': 2502.59, // Maidstone
+  'E07000074': 2328.37, // Maldon
+  'E07000235': 2450.92, // Malvern Hills
+  'E08000003': 2312.04, // Manchester
+  'E07000174': 2600.38, // Mansfield
+  'E06000035': 2328.55, // Medway UA
+  'E07000133': 2429.67, // Melton
+  'E09000024': 2146.76, // Merton
+  'E07000042': 2656.41, // Mid Devon
+  'E07000203': 2316.88, // Mid Suffolk
+  'E07000228': 2474.26, // Mid Sussex
+  'E06000002': 2549.16, // Middlesbrough UA
+  'E06000042': 2372.21, // Milton Keynes UA
+  'E07000210': 2519.86, // Mole Valley
+  'E07000091': 2419.76, // New Forest
+  'E07000175': 2682.10, // Newark & Sherwood
+  'E08000021': 2542.19, // Newcastle upon Tyne
+  'E07000195': 2334.25, // Newcastle-under-Lyme
+  'E09000025': 1944.23, // Newham
+  'E07000043': 2642.21, // North Devon
+  'E07000038': 2466.57, // North East Derbyshire
+  'E06000012': 2483.85, // North East Lincolnshire UA
+  'E07000099': 2448.52, // North Hertfordshire
+  'E07000139': 2337.81, // North Kesteven
+  'E06000013': 2348.46, // North Lincolnshire UA
+  'E07000147': 2459.93, // North Norfolk
+  'E06000061': 2423.96, // North Northamptonshire
+  'E06000024': 2491.22, // North Somerset UA
+  'E08000022': 2461.77, // North Tyneside
+  'E07000218': 2532.10, // North Warwickshire
+  'E07000134': 2418.20, // North West Leicestershire
+  'E06000065': 2544.34, // North Yorkshire UA
+  'E06000057': 2596.94, // Northumberland UA
+  'E07000148': 2503.44, // Norwich
+  'E07000219': 2502.16, // Nuneaton & Bedworth
+  'E07000135': 2406.85, // Oadby & Wigston
+  'E08000004': 2602.23, // Oldham
+  'E07000178': 2678.40, // Oxford
+  'E07000122': 2640.18, // Pendle
+  'E06000031': 2293.47, // Peterborough UA
+  'E06000026': 2441.85, // Plymouth UA
+  'E06000044': 2291.71, // Portsmouth UA
+  'E07000123': 2575.74, // Preston
+  'E06000038': 2612.77, // Reading UA
+  'E09000026': 2294.58, // Redbridge
+  'E06000003': 2544.48, // Redcar & Cleveland UA
+  'E07000236': 2462.95, // Redditch
+  'E07000211': 2566.61, // Reigate & Banstead
+  'E07000124': 2386.50, // Ribble Valley
+  'E09000027': 2486.10, // Richmond upon Thames
+  'E08000005': 2600.83, // Rochdale
+  'E07000075': 2363.48, // Rochford
+  'E07000125': 2519.97, // Rossendale
+  'E07000064': 2700.95, // Rother
+  'E08000018': 2381.53, // Rotherham
+  'E07000220': 2483.05, // Rugby
+  'E07000212': 2492.99, // Runnymede
+  'E07000176': 2643.27, // Rushcliffe
+  'E07000092': 2320.28, // Rushmoor
+  'E06000017': 2737.58, // Rutland UA
+  'E08000006': 2594.45, // Salford
+  'E08000028': 2244.46, // Sandwell
+  'E08000014': 2583.22, // Sefton
+  'E07000111': 2522.36, // Sevenoaks
+  'E08000039': 2510.16, // Sheffield
+  'E06000051': 2528.18, // Shropshire UA
+  'E06000039': 2414.44, // Slough UA
+  'E08000029': 2197.26, // Solihull
+  'E06000066': 2560.59, // Somerset UA
+  'E07000012': 2536.25, // South Cambridgeshire
+  'E07000039': 2339.61, // South Derbyshire
+  'E06000025': 2550.59, // South Gloucestershire UA
+  'E07000044': 2615.22, // South Hams
+  'E07000140': 2278.20, // South Holland
+  'E07000141': 2260.00, // South Kesteven
+  'E07000149': 2482.87, // South Norfolk
+  'E07000179': 2597.57, // South Oxfordshire
+  'E07000126': 2442.66, // South Ribble
+  'E07000196': 2313.67, // South Staffordshire
+  'E08000023': 2434.43, // South Tyneside
+  'E06000045': 2381.48, // Southampton UA
+  'E06000033': 2265.17, // Southend-on-Sea UA
+  'E09000028': 1967.26, // Southwark
+  'E07000213': 2526.44, // Spelthorne
+  'E07000240': 2419.22, // St Albans
+  'E08000013': 2403.38, // St Helens
+  'E07000197': 2302.68, // Stafford
+  'E07000198': 2338.21, // Staffordshire Moorlands
+  'E07000243': 2391.97, // Stevenage
+  'E08000007': 2618.90, // Stockport
+  'E06000004': 2589.83, // Stockton-on-Tees UA
+  'E06000021': 2183.12, // Stoke-on-Trent UA
+  'E07000221': 2484.17, // Stratford-on-Avon
+  'E07000082': 2491.36, // Stroud
+  'E08000024': 2197.14, // Sunderland
+  'E07000214': 2585.16, // Surrey Heath
+  'E09000029': 2378.64, // Sutton
+  'E07000113': 2405.65, // Swale
+  'E06000030': 2438.10, // Swindon UA
+  'E08000008': 2447.21, // Tameside
+  'E07000199': 2300.76, // Tamworth
+  'E07000215': 2594.85, // Tandridge
+  'E07000045': 2643.12, // Teignbridge
+  'E06000020': 2256.26, // Telford and the Wrekin UA
+  'E07000076': 2269.63, // Tendring
+  'E07000093': 2305.52, // Test Valley
+  'E07000083': 2340.53, // Tewkesbury
+  'E07000114': 2490.90, // Thanet
+  'E07000102': 2422.31, // Three Rivers
+  'E06000034': 2254.68, // Thurrock UA
+  'E07000115': 2471.83, // Tonbridge & Malling
+  'E06000027': 2470.25, // Torbay UA
+  'E07000046': 2601.42, // Torridge
+  'E09000030': 1837.78, // Tower Hamlets
+  'E08000009': 2291.70, // Trafford
+  'E07000116': 2446.15, // Tunbridge Wells
+  'E07000077': 2333.82, // Uttlesford
+  'E07000180': 2577.44, // Vale of White Horse
+  'E08000036': 2296.89, // Wakefield
+  'E08000030': 2627.48, // Walsall
+  'E09000031': 2386.96, // Waltham Forest
+  'E09000032': 1028.21, // Wandsworth
+  'E06000007': 2447.61, // Warrington UA
+  'E07000222': 2461.55, // Warwick
+  'E07000103': 2446.70, // Watford
+  'E07000216': 2604.87, // Waverley
+  'E07000065': 2728.43, // Wealden
+  'E07000241': 2452.26, // Welwyn Hatfield
+  'E06000037': 2505.37, // West Berkshire UA
+  'E07000047': 2705.33, // West Devon
+  'E07000127': 2456.23, // West Lancashire
+  'E07000142': 2354.25, // West Lindsey
+  'E06000062': 2486.66, // West Northamptonshire
+  'E07000181': 2566.95, // West Oxfordshire
+  'E07000245': 2351.47, // West Suffolk
+  'E09000033': 1049.55, // Westminster
+  'E06000064': 2507.99, // Westmorland and Furness UA
+  'E08000010': 2152.68, // Wigan
+  'E06000054': 2571.78, // Wiltshire UA
+  'E07000094': 2359.76, // Winchester
+  'E06000040': 1952.62, // Windsor & Maidenhead UA
+  'E08000015': 2500.59, // Wirral
+  'E07000217': 2598.04, // Woking
+  'E06000041': 2497.70, // Wokingham UA
+  'E08000031': 2538.99, // Wolverhampton
+  'E07000237': 2405.81, // Worcester
+  'E07000229': 2456.13, // Worthing
+  'E07000238': 2373.19, // Wychavon
+  'E07000128': 2460.53, // Wyre
+  'E07000239': 2512.47, // Wyre Forest
+  'E06000014': 2287.15, // York UA
+};
+// CT_RATES_END
+// Statutory band multipliers relative to Band D (ninths of the 1991 valuation scale).
+const CT_RATIO = { A: 6/9, B: 7/9, C: 8/9, D: 1, E: 11/9, F: 13/9, G: 15/9, H: 18/9 };
+let BOROUGH_CACHE = {};   // postcode -> { c: GSS code, n: authority name }
+try { BOROUGH_CACHE = JSON.parse(localStorage.getItem('hh_boroughs2') || '{}'); } catch (e) {}
+
+function ctBand(p) {
+  const t = String(p.council_tax || '');
+  const m = t.match(/band\s*:?\s*([A-H])(?![A-Za-z])/i) || t.match(/(?:^|[^A-Za-z])([A-H])(?![A-Za-z])/);
+  return m ? m[1].toUpperCase() : null;
+}
+function boroughOf(p) {
+  const pc = (p.postcode || '').toUpperCase().trim();
+  return (pc && BOROUGH_CACHE[pc]) || null;
+}
+function boroughName(p) { const b = boroughOf(p); return (b && b.n) || null; }
+function ctAnnual(p) {
+  const band = ctBand(p), boro = boroughOf(p);
+  if (!band || !boro || !(boro.c in CT_BAND_D)) return null;
+  return Math.round(CT_BAND_D[boro.c] * CT_RATIO[band]);
+}
+// service charge + ground rent + council tax; null only if nothing is known
+function runningCosts(p) {
+  const parts = [p.service_charge, p.ground_rent, ctAnnual(p)];
+  if (parts.every(x => x == null)) return null;
+  return parts.reduce((a, x) => a + (x || 0), 0);
+}
+// resolve borough (admin_district) for any postcodes not yet cached, then re-render
+async function loadBoroughs() {
+  const missing = [...new Set(
+    PROPERTIES.filter(p => p.postcode && !(p.postcode.toUpperCase().trim() in BOROUGH_CACHE))
+      .map(p => p.postcode.trim())
+  )].slice(0, 100); // postcodes.io bulk limit
+  if (!missing.length) return;
+  try {
+    const res = await fetch('https://api.postcodes.io/postcodes', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ postcodes: missing })
+    });
+    const j = await res.json();
+    (j.result || []).forEach(r => {
+      BOROUGH_CACHE[(r.query || '').toUpperCase()] = r.result
+        ? { c: (r.result.codes && r.result.codes.admin_district) || null, n: r.result.admin_district || null }
+        : null;
+    });
+    localStorage.setItem('hh_boroughs2', JSON.stringify(BOROUGH_CACHE));
+    render();
+  } catch (e) {}
+}
 function ppsqm(p) {
   if (p.price && p.floor_area_sqm) return '£' + Math.round(p.price / p.floor_area_sqm).toLocaleString('en-GB');
   return '—';
 }
+
+// Station entries may be strings ("Name (0.1mi.)") or objects; normalise both.
+function parseStation(s) {
+  if (s && typeof s === 'object') return { name: s.name || '', mi: s.dist_mi ?? null, text: s.dist_text || '' };
+  const str = String(s || '');
+  const m = str.match(/([\d.]+)\s*mi/);
+  return { name: str.replace(/\s*\([^)]*\)\s*$/, '').trim(), mi: m ? Number(m[1]) : null, text: m ? m[0] : '' };
+}
+function stationList(p) { return (p.enrichment?.stations || []).map(parseStation); }
+function walkMin(mi) { return mi == null ? null : Math.max(1, Math.round(mi * 1609 * 1.3 / 80)); } // ~detour × 4.8km/h
 
 function lastSeen(p) { return p.enrichment?.last_seen || p.created_at; }
 function daysSince(iso) { return iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null; }
@@ -234,10 +599,12 @@ function openCompare(idA, idB) {
     { l:'Tenure', v:p=>esc(p.tenure||'—')+(p.lease_years?` (${p.lease_years}y)`:'') },
     { l:'Service charge/yr', v:p=>p.service_charge?money(p.service_charge):'—', c:p=>p.service_charge, dir:'low' },
     { l:'Ground rent/yr', v:p=>p.ground_rent?money(p.ground_rent):'—', c:p=>p.ground_rent, dir:'low' },
-    { l:'Council tax', v:p=>esc(p.council_tax||'—') },
+    { l:'Council tax band', v:p=>{const b=ctBand(p); return b?`Band ${b}${boroughName(p)?` · ${esc(boroughName(p))}`:''}`:esc(p.council_tax||'—');} },
+    { l:`Council tax/yr (est ${CT_YEAR})`, v:p=>{const a=ctAnnual(p); return a?money(a):'—';}, c:ctAnnual, dir:'low' },
+    { l:'Running costs/yr (svc + ground + CT)', v:p=>{const r=runningCosts(p); return r?money(Math.round(r)):'—';}, c:runningCosts, dir:'low' },
     { l:'EPC', v:p=>esc(p.enrichment?.epc_rating||'—'), c:p=>p.enrichment?.epc_rating, dir:'lowStr' },
     { l:'Crime', v:p=>esc(p.enrichment?.crime_level||'—') },
-    { l:'Nearest station', v:p=>esc((p.enrichment?.stations||[])[0]||'—') },
+    { l:'Nearest station', v:p=>{const s=stationList(p)[0];return s?`${esc(s.name)}${s.mi!=null?` (~${walkMin(s.mi)} min)`:''}`:'—';} },
     ...PEOPLE.map(pe => ({ l:pe.label+"'s rating", v:p=>{const r=ratingOf(p,pe.id);return r?r+'/10':'—';}, c:p=>ratingOf(p,pe.id), dir:'high' }))
   ];
   const better = (a,b,dir) => {
@@ -259,7 +626,7 @@ function openCompare(idA, idB) {
       <h2 style="margin:0; font-size:17px">Compare</h2><button id="cmp-close">Close</button></div>
     <table class="cmp"><thead><tr><th class="lbl"></th><th>${head(A)}</th><th>${head(B)}</th></tr></thead>
     <tbody>${body}</tbody></table>
-    <div class="sub" style="margin-top:12px">Highlight = better on that metric (lower price/costs, more space, higher rating, better EPC).</div>
+    <div class="sub" style="margin-top:12px">Highlight = better on that metric (lower price/costs, more space, higher rating, better EPC). Council tax is estimated from official ${CT_YEAR} area Band D rates (GOV.UK live table; all precepts incl., parish precepts averaged) — actual bills vary with discounts/premiums.</div>
   </div>`;
   el.style.display = 'flex';
   el.querySelector('#cmp-close').onclick = () => { el.style.display = 'none'; };
@@ -483,6 +850,7 @@ async function load() {
   if (error) { $('#grid').innerHTML = `<div class="empty">Error: ${esc(error.message)}</div>`; return; }
   PROPERTIES = data || [];
   render();
+  loadBoroughs();   // fire-and-forget; re-renders when boroughs resolve
 }
 
 async function saveOpinion(propertyId, person, patch) {
@@ -516,7 +884,12 @@ const COLS = [
   { key:'service_charge',label:'Svc/yr',   get:p=>p.service_charge?money(p.service_charge):'—', sortVal:p=>p.service_charge==null?Infinity:p.service_charge },
   { key:'epc',           label:'EPC',      get:p=>esc(p.enrichment?.epc_rating||'—'), sortVal:p=>p.enrichment?.epc_rating||'zz' },
   { key:'crime',         label:'Crime',    get:p=>esc(p.enrichment?.crime_level||'—') },
-  { key:'council_tax',   label:'Council',  get:p=>esc(p.council_tax||'—') },
+  { key:'council_tax',   label:'CT/yr',    get:p=>{
+      const a=ctAnnual(p), b=ctBand(p);
+      if (a) return `${money(a)}<div class="sub">band ${b} · ${esc(boroughName(p))}</div>`;
+      if (b) return `band ${b}<div class="sub">${boroughName(p)?esc(boroughName(p))+' — no rate':'area…'}</div>`;
+      return esc(p.council_tax||'—');
+    }, sortVal:p=>ctAnnual(p)??Infinity },
   { key:'status',        label:'Status',   get:p=>`<span class="pill">${esc(p.status||'')}</span>` },
   { key:'seen',          label:'Seen',     get:p=>`<span class="${isStale(p)?'stale':'muted'}">${seenLabel(p)}</span>`, sortVal:p=>{const d=daysSince(lastSeen(p));return d==null?Infinity:d;} }
 ];
@@ -596,7 +969,7 @@ function render() {
 function detailRow(p) {
   const colspan = COLS.length + PEOPLE.length;
   const e = p.enrichment || {};
-  const stations = (e.stations || []).join(' · ');
+  const nearStations = stationList(p).slice(0, 3);
   const statusSel = `<select data-status="${p.id}">${STATUSES.map(s=>`<option ${s===p.status?'selected':''}>${s}</option>`).join('')}</select>`;
   const links = [
     `<a href="${esc(p.url)}" target="_blank" rel="noopener">view listing ↗</a>`,
@@ -629,8 +1002,8 @@ function detailRow(p) {
     <div style="margin-bottom:10px">${links}${p.agent?` &nbsp;·&nbsp; ${esc(p.agent)}`:''}${e.for_sale===false?' &nbsp;·&nbsp; <span class="muted">(rental)</span>':''}</div>
     <div class="sub" style="margin-bottom:10px">Last seen ${seenLabel(p) === 'today' ? 'today' : seenLabel(p) + ' ago'} · first saved ${p.created_at ? new Date(p.created_at).toLocaleDateString('en-GB') : '—'} · <a href="${esc(p.url)}" target="_blank" rel="noopener">re-check ↗</a> <span class="muted">(re-click the bookmarklet there to refresh)</span></div>
     ${(e.price_history && e.price_history.length > 1) ? `<div class="sub" style="margin-bottom:10px">Price history: ${e.price_history.map(h => money(h.price) + ' (' + new Date(h.at).toLocaleDateString('en-GB',{month:'short',year:'2-digit'}) + ')').join(' → ')}</div>` : ''}
-    ${p.tenure?`<div style="margin-bottom:10px">${esc(p.tenure)}${p.lease_years?` · ${p.lease_years} yrs left`:''}${p.service_charge?` · service charge ${money(p.service_charge)}/yr`:''}${p.ground_rent?` · ground rent ${money(p.ground_rent)}/yr`:''}${p.council_tax?` · council tax ${esc(p.council_tax)}`:''}</div>`:''}
-    ${stations?`<div class="muted" style="margin-bottom:10px">Stations: ${esc(stations)}</div>`:''}
+    ${p.tenure?`<div style="margin-bottom:10px">${esc(p.tenure)}${p.lease_years?` · ${p.lease_years} yrs left`:''}${p.service_charge?` · service charge ${money(p.service_charge)}/yr`:''}${p.ground_rent?` · ground rent ${money(p.ground_rent)}/yr`:''}${p.council_tax?` · council tax ${esc(p.council_tax)}${ctAnnual(p)?` <span class="sub">(~${money(ctAnnual(p))}/yr, ${esc(boroughName(p))} ${CT_YEAR})</span>`:''}`:''}</div>`:''}
+    ${nearStations.length?`<div style="margin-bottom:10px"><b>Nearest stations</b><div class="sub" style="margin-top:2px">${nearStations.map(s=>`${esc(s.name)} — ${s.mi!=null?`~${walkMin(s.mi)} min walk (${s.mi} mi)`:esc(s.text||'')}`).join('<br>')}</div></div>`:''}
     <div id="commute-${p.id}" style="margin-bottom:10px"></div>
     ${e.description?`<details style="margin-bottom:10px"><summary style="cursor:pointer; color:var(--muted)">Description</summary><div style="white-space:pre-wrap; margin-top:6px">${esc(e.description)}</div></details>`:''}
     ${features?`<div style="margin-bottom:12px">${features}</div>`:''}
